@@ -1,0 +1,21 @@
+---
+- name: Bootstrap packages and Python with raw (works before Python exists)
+  ansible.builtin.raw: |
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    if ! command -v python3 >/dev/null 2>&1 || ! dpkg-query -W -f='${Status}' python3 2>/dev/null | grep -q 'install ok installed'; then
+      apt-get update
+      apt-get install -y python3 python3-apt sudo openssh-server ca-certificates curl wget gnupg git rsync xz-utils build-essential file procps iproute2 nfs-common
+    else
+      apt-get update
+      apt-get install -y python3-apt sudo openssh-server ca-certificates curl wget gnupg git rsync xz-utils build-essential file procps iproute2 nfs-common
+    fi
+    systemctl enable --now ssh || systemctl enable --now sshd
+    install -d -m 0755 /var/lib/jenkins-buildfarm
+  register: bootstrap_raw
+  changed_when: "'0 upgraded' not in (bootstrap_raw.stdout | default(''))"
+  tags: [bootstrap]
+
+- name: Gather facts after Python installation
+  ansible.builtin.setup:
+  tags: [bootstrap]

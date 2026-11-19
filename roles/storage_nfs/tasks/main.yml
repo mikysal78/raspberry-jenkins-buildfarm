@@ -1,0 +1,35 @@
+---
+- name: Validate NFS configuration when enabled
+  ansible.builtin.assert:
+    that:
+      - storage_nfs.server | length > 0
+      - storage_nfs.export | length > 0
+      - storage_nfs.mountpoint | length > 1
+    fail_msg: "Impostare server, export e mountpoint in inventory/group_vars/all.yml."
+  when: storage_nfs.enabled | bool
+
+- name: Create NFS mountpoint
+  ansible.builtin.file:
+    path: "{{ storage_nfs.mountpoint }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: storage_nfs.enabled | bool
+
+- name: Mount NFS export persistently
+  ansible.posix.mount:
+    path: "{{ storage_nfs.mountpoint }}"
+    src: "{{ storage_nfs.server }}:{{ storage_nfs.export }}"
+    fstype: nfs
+    opts: "{{ storage_nfs.mount_options }}"
+    state: mounted
+  when: storage_nfs.enabled | bool
+
+- name: Create shared NFS directories
+  ansible.builtin.file:
+    path: "{{ storage_nfs.mountpoint }}/{{ item }}"
+    state: directory
+    mode: "0775"
+  loop: "{{ storage_nfs.directories }}"
+  when: storage_nfs.enabled | bool

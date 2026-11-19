@@ -1,0 +1,91 @@
+---
+- name: Ensure Jenkins repository keyring directory exists
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Jenkins LTS signing key
+  ansible.builtin.get_url:
+    url: "{{ jenkins_repo_key_url }}"
+    dest: "{{ jenkins_repo_keyring }}"
+    mode: "0644"
+
+- name: Configure Jenkins LTS apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ jenkins_repo_keyring }}] {{ jenkins_repo_url }} binary/"
+    filename: jenkins
+    state: present
+
+- name: Install Jenkins LTS
+  ansible.builtin.apt:
+    name: jenkins
+    state: present
+    update_cache: true
+
+- name: Install Jenkins SSH agent plugin
+  ansible.builtin.command:
+    cmd: "jenkins-plugin-cli --plugins {{ jenkins_plugins | join(' ') }}"
+  register: plugin_install
+  changed_when: plugin_install.rc == 0
+  notify: Restart Jenkins
+
+- name: Configure Jenkins to use no built-in executors
+  ansible.builtin.lineinfile:
+    path: /etc/default/jenkins
+    regexp: '^JAVA_ARGS='
+    line: 'JAVA_ARGS="-Djava.awt.headless=true"'
+    create: true
+    mode: "0644"
+  notify: Restart Jenkins
+
+- name: Ensure Jenkins service is enabled and started
+  ansible.builtin.systemd:
+    name: jenkins
+    enabled: true
+    state: started
+
+- name: Wait for Jenkins HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_http_port }}/login"
+    status_code: [200, 403]
+  register: jenkins_http
+  retries: 30
+  delay: 5
+  until: jenkins_http.status in [200, 403]
+
+- name: Ensure Jenkins SSH directory exists
+  ansible.builtin.file:
+    path: /var/lib/jenkins/.ssh
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0700"
+
+- name: Generate Jenkins-to-agent SSH key if absent
+  ansible.builtin.command:
+    cmd: "ssh-keygen -q -t ed25519 -N '' -f /var/lib/jenkins/.ssh/agent_ed25519"
+    creates: /var/lib/jenkins/.ssh/agent_ed25519
+
+- name: Read Jenkins agent public key
+  ansible.builtin.slurp:
+    src: /var/lib/jenkins/.ssh/agent_ed25519.pub
+  register: agent_pub
+
+- name: Publish public key fact for agent play
+  ansible.builtin.set_fact:
+    jenkins_agent_public_key: "{{ agent_pub.content | b64decode | trim }}"
+
+- name: Read Jenkins agent private key
+  ansible.builtin.slurp:
+    src: /var/lib/jenkins/.ssh/agent_ed25519
+  register: agent_priv
+  no_log: true
+
+- name: Publish private key fact for controller configuration
+  ansible.builtin.set_fact:
+    jenkins_agent_private_key_text: "{{ agent_priv.content | b64decode }}"
+  no_log: true
+
+- name: Configure agent nodes in Jenkins
+  ansible.builtin.import_tasks: configure_nodes.yml

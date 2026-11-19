@@ -1,0 +1,39 @@
+---
+- name: Create dedicated Jenkins agent group
+  ansible.builtin.group:
+    name: "{{ jenkins_agent_group }}"
+    system: true
+    state: present
+
+- name: Create dedicated Jenkins agent user
+  ansible.builtin.user:
+    name: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_group }}"
+    home: "{{ jenkins_agent_home }}"
+    shell: /bin/bash
+    create_home: true
+    system: true
+    state: present
+
+- name: Create agent work directory
+  ansible.builtin.file:
+    path: "{{ jenkins_agent_remote_root }}"
+    state: directory
+    owner: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_group }}"
+    mode: "0755"
+
+- name: Ensure agent SSH directory
+  ansible.builtin.file:
+    path: "{{ jenkins_agent_home }}/.ssh"
+    state: directory
+    owner: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_group }}"
+    mode: "0700"
+
+- name: Install controller-generated public key in agent account
+  ansible.posix.authorized_key:
+    user: "{{ jenkins_agent_user }}"
+    key: "{{ hostvars[groups['jenkins_controller'][0]].jenkins_agent_public_key }}"
+    state: present
+  when: hostvars[groups['jenkins_controller'][0]].jenkins_agent_public_key is defined

@@ -1,0 +1,53 @@
+import jenkins.model.Jenkins
+import hudson.slaves.DumbSlave
+import hudson.slaves.RetentionStrategy
+import hudson.plugins.sshslaves.SSHLauncher
+import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey
+import com.cloudbees.plugins.credentials.CredentialsScope
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+import com.cloudbees.plugins.credentials.domains.Domain
+
+def j = Jenkins.get()
+def credentialsId = "raspberry-buildfarm-agent-key"
+def credsProvider = SystemCredentialsProvider.getInstance()
+def existing = credsProvider.getStore().getCredentials(Domain.global()).find { it.id == credentialsId }
+if (existing == null) {
+    def privateKey = '''{{ hostvars[groups['jenkins_controller'][0]].jenkins_agent_private_key_text }}'''
+    def credential = new BasicSSHUserPrivateKey(
+        CredentialsScope.GLOBAL,
+        credentialsId,
+        "{{ jenkins_agent_user }}",
+        new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(privateKey),
+        "",
+        "Ansible-managed Raspberry build farm agent key"
+    )
+    credsProvider.getStore().addCredentials(Domain.global(), credential)
+    credsProvider.save()
+}
+
+{% for host in (groups['jenkins_controller'] + groups['jenkins_agents']) %}
+{% set h = hostvars[host] %}
+def nodeName{{ loop.index }} = "{{ host }}"
+def node{{ loop.index }} = j.getNode(nodeName{{ loop.index }})
+def launcher{{ loop.index }} = new SSHLauncher("{{ h.ansible_host | default(host) }}", 22, credentialsId)
+if (node{{ loop.index }} == null) {
+    node{{ loop.index }} = new DumbSlave(
+        nodeName{{ loop.index }},
+        "Managed by Ansible",
+        "{{ jenkins_agent_remote_root }}",
+        {{ h.jenkins_agent_executors | default(jenkins_agent_executors) | int }},
+        hudson.model.Node.Mode.NORMAL,
+        "{{ h.jenkins_agent_labels | default(jenkins_agent_labels) }}",
+        launcher{{ loop.index }},
+        new RetentionStrategy.Always(),
+        []
+    )
+    j.addNode(node{{ loop.index }})
+} else {
+    node{{ loop.index }}.setLauncher(launcher{{ loop.index }})
+    node{{ loop.index }}.setNumExecutors({{ h.jenkins_agent_executors | default(jenkins_agent_executors) | int }})
+    node{{ loop.index }}.setLabelString("{{ h.jenkins_agent_labels | default(jenkins_agent_labels) }}")
+    j.updateNode(node{{ loop.index }})
+}
+{% endfor %}
+j.save()

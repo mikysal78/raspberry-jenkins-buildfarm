@@ -1,0 +1,13 @@
+---
+- name: Connectivity and platform checks
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Show node facts
+      ansible.builtin.debug:
+        msg:
+          - "host={{ inventory_hostname }}"
+          - "model={{ ansible_product_name | default('unknown') }}"
+          - "architecture={{ ansible_architecture }}"
+          - "cpu={{ ansible_processor_vcpus | default('unknown') }}"
+          - "memory_mb={{ ansible_memtotal_mb | default('unknown') }}"

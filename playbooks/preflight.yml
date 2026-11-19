@@ -1,0 +1,15 @@
+---
+- name: Check SSH connectivity, OS and architecture
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run raw platform probe before Python bootstrap
+      ansible.builtin.raw: |
+        printf 'model='; cat /proc/device-tree/model 2>/dev/null || echo unknown
+        printf 'arch='; dpkg --print-architecture 2>/dev/null || uname -m
+        printf 'debian='; . /etc/os-release && echo "$VERSION_ID"
+      register: probe
+      changed_when: false
+    - name: Show probe result
+      ansible.builtin.debug:
+        var: probe.stdout_lines

@@ -1,0 +1,53 @@
+---
+- name: Bootstrap Debian Minimal nodes
+  hosts: all
+  gather_facts: false
+  become: false
+  roles:
+    - role: bootstrap
+      tags: [bootstrap]
+
+- name: Gather hardware facts and validate nodes
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: hardware
+      tags: [hardware]
+
+- name: Configure all build nodes
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: common
+    - role: storage_nfs
+      tags: [storage]
+
+- name: Install and configure Jenkins controller
+  hosts: jenkins_controller
+  become: true
+  gather_facts: true
+  roles:
+    - role: jenkins_controller
+      tags: [jenkins, controller]
+
+- name: Create local and remote Jenkins agent accounts
+  hosts: jenkins_controller:jenkins_agents
+  become: true
+  gather_facts: true
+  roles:
+    - role: jenkins_agent
+      tags: [jenkins, agents]
+
+- name: Authorize controller key on every agent
+  hosts: jenkins_controller:jenkins_agents
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Add Jenkins controller public key
+      ansible.posix.authorized_key:
+        user: "{{ jenkins_agent_user }}"
+        key: "{{ hostvars[groups['jenkins_controller'][0]].jenkins_agent_public_key }}"
+        state: present
+      tags: [jenkins, agents]

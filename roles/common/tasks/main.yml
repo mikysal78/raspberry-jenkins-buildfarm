@@ -1,0 +1,22 @@
+---
+- name: Install Java 21 and common build dependencies
+  ansible.builtin.apt:
+    name:
+      - "{{ java_package }}"
+      - fontconfig
+      - git
+      - curl
+      - wget
+      - rsync
+      - build-essential
+      - ccache
+      - python3
+      - nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure Java runtime is available
+  ansible.builtin.command: java -version
+  register: java_version
+  changed_when: false

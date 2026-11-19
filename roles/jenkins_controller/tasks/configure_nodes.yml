@@ -1,0 +1,17 @@
+---
+- name: Create Jenkins init hook directory
+  ansible.builtin.file:
+    path: /var/lib/jenkins/init.groovy.d
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0750"
+
+- name: Deploy Jenkins agent node configuration
+  ansible.builtin.template:
+    src: agent-nodes.groovy.j2
+    dest: /var/lib/jenkins/init.groovy.d/20-buildfarm-agents.groovy
+    owner: jenkins
+    group: jenkins
+    mode: "0640"
+  notify: Restart Jenkins

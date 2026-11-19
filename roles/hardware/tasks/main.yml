@@ -1,0 +1,58 @@
+---
+- name: Ensure Debian 13 Trixie or Debian family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - ansible_distribution == "Debian"
+    fail_msg: "Questo progetto è predisposto per Debian. Rilevato: {{ ansible_distribution }}."
+  tags: [hardware]
+
+- name: Require 64-bit userspace for current Jenkins Java package
+  ansible.builtin.assert:
+    that:
+      - not hardware_require_arm64 or ansible_architecture in ["aarch64", "x86_64"]
+    fail_msg: >-
+      Architettura {{ ansible_architecture }} non supportata da questo provisioning.
+      Installa Debian arm64/aarch64 sui Raspberry Pi 3 prima di proseguire.
+  tags: [hardware]
+
+- name: Read Raspberry model when device-tree is available
+  ansible.builtin.command: cat /proc/device-tree/model
+  register: rpi_model
+  changed_when: false
+  failed_when: false
+  tags: [hardware]
+
+- name: Read root filesystem free space
+  ansible.builtin.command: df -Pm /
+  register: root_df
+  changed_when: false
+  tags: [hardware]
+
+- name: Calculate conservative executor recommendation
+  ansible.builtin.set_fact:
+    detected_raspberry_model: "{{ rpi_model.stdout | default('unknown') | trim }}"
+    detected_cpu_count: "{{ ansible_processor_vcpus | default(1) | int }}"
+    detected_ram_mb: "{{ ansible_memtotal_mb | default(512) | int }}"
+    recommended_executors: >-
+      {{ 1 if (ansible_memtotal_mb | default(512) | int) >= 768
+         and (ansible_processor_vcpus | default(1) | int) >= 2 else 1 }}
+  tags: [hardware]
+
+- name: Write hardware report
+  ansible.builtin.copy:
+    dest: "{{ hardware_report_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {
+        "inventory_hostname": {{ inventory_hostname | to_json }},
+        "model": {{ detected_raspberry_model | to_json }},
+        "architecture": {{ ansible_architecture | to_json }},
+        "cpu_logical": {{ detected_cpu_count | int }},
+        "ram_mb": {{ detected_ram_mb | int }},
+        "recommended_executors": {{ recommended_executors | int }},
+        "root_filesystem": {{ root_df.stdout_lines | default([]) | to_json }}
+      }
+  tags: [hardware]

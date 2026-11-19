@@ -1,0 +1,57 @@
+---
+# Per una chiave non predefinita, passare --private-key /path/alla/chiave
+# oppure configurare ssh-agent sulla macchina di controllo.
+
+# Bootstrap: Debian Minimal potrebbe non avere Python installato.
+bootstrap_packages:
+  - python3
+  - python3-apt
+  - sudo
+  - openssh-server
+  - ca-certificates
+  - curl
+  - wget
+  - gnupg
+  - git
+  - rsync
+  - xz-utils
+  - build-essential
+  - file
+  - procps
+  - iproute2
+  - nfs-common
+
+java_package: openjdk-21-jre-headless
+jenkins_repo_url: "https://pkg.jenkins.io/debian-stable"
+jenkins_repo_key_url: "https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key"
+jenkins_repo_keyring: /usr/share/keyrings/jenkins-keyring.asc
+jenkins_repo_file: /etc/apt/sources.list.d/jenkins.list
+jenkins_http_port: 8080
+jenkins_agent_user: jenkins-agent
+jenkins_agent_group: jenkins-agent
+jenkins_agent_home: /home/jenkins-agent
+jenkins_agent_executors: 1
+jenkins_agent_labels: "linux arm64 raspberry"
+jenkins_controller_executors: 0
+jenkins_agent_remote_root: /home/jenkins-agent/work
+jenkins_agent_num_executors_by_host: {}
+
+# Jenkins SSH Build Agents plugin; le dipendenze vengono risolte da jenkins-plugin-cli.
+jenkins_plugins:
+  - ssh-slaves
+
+# NFS è disabilitato finché non si valorizzano server ed export reali.
+storage_nfs:
+  enabled: false
+  server: "192.168.1.10"
+  export: "/volume1/nfs-firmware"
+  mountpoint: "/mnt/nfs-firmware"
+  mount_options: "rw,hard,_netdev,nofail"
+  directories:
+    - downloads
+    - artifacts
+    - cache
+
+hardware_report_path: /var/lib/jenkins-buildfarm/hardware.json
+hardware_min_free_mb: 2048
+hardware_require_arm64: true
