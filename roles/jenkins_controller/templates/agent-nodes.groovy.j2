@@ -36,22 +36,18 @@ def launcher{{ loop.index }} = new SSHLauncher("{{ h.ansible_host | default(host
 // Host key verificate contro /var/lib/jenkins/.ssh/known_hosts (popolato da Ansible).
 launcher{{ loop.index }}.setSshHostKeyVerificationStrategy(new KnownHostsFileKeyVerificationStrategy())
 if (node{{ loop.index }} == null) {
-    node{{ loop.index }} = new DumbSlave(
-        nodeName{{ loop.index }},
-        "Managed by Ansible",
-        "{{ jenkins_agent_remote_root }}",
-        {{ h.jenkins_agent_executors | default(jenkins_agent_executors) | int }},
-        hudson.model.Node.Mode.NORMAL,
-        "{{ h.jenkins_agent_labels | default(jenkins_agent_labels) }}",
-        launcher{{ loop.index }},
-        new RetentionStrategy.Always(),
-        []
-    )
-    j.addNode(node{{ loop.index }})
+    node{{ loop.index }} = new DumbSlave(nodeName{{ loop.index }}, "{{ jenkins_agent_remote_root }}", launcher{{ loop.index }})
 } else {
     node{{ loop.index }}.setLauncher(launcher{{ loop.index }})
-    node{{ loop.index }}.setNumExecutors({{ h.jenkins_agent_executors | default(jenkins_agent_executors) | int }})
-    node{{ loop.index }}.setLabelString("{{ h.jenkins_agent_labels | default(jenkins_agent_labels) }}")
+}
+node{{ loop.index }}.setNodeDescription("Managed by Ansible")
+node{{ loop.index }}.setNumExecutors({{ h.jenkins_agent_executors | default(jenkins_agent_executors) | int }})
+node{{ loop.index }}.setMode(hudson.model.Node.Mode.NORMAL)
+node{{ loop.index }}.setLabelString("{{ h.jenkins_agent_labels | default(jenkins_agent_labels) }}")
+node{{ loop.index }}.setRetentionStrategy(new RetentionStrategy.Always())
+if (j.getNode(nodeName{{ loop.index }}) == null) {
+    j.addNode(node{{ loop.index }})
+} else {
     j.updateNode(node{{ loop.index }})
 }
 {% endfor %}
