@@ -42,7 +42,7 @@
 
 - name: Calculate conservative executor recommendation
   ansible.builtin.set_fact:
-    detected_raspberry_model: "{{ rpi_model.stdout | default('unknown') | trim }}"
+    detected_raspberry_model: "{{ rpi_model.stdout | default('unknown') | replace('\x00', '') | trim }}"
     detected_cpu_count: "{{ ansible_processor_vcpus | default(1) | int }}"
     detected_ram_mb: "{{ ansible_memtotal_mb | default(512) | int }}"
     # Un executor ogni 2 core e ogni 2 GB di RAM, mai meno di 1.
