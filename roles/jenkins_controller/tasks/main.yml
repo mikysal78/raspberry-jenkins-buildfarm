@@ -23,20 +23,58 @@
     state: present
     update_cache: true
 
-- name: Install Jenkins SSH agent plugin
-  ansible.builtin.command:
-    cmd: "jenkins-plugin-cli --plugins {{ jenkins_plugins | join(' ') }}"
-  register: plugin_install
-  changed_when: plugin_install.rc == 0
+# Con systemd Jenkins ignora /etc/default/jenkins: porta e opzioni JVM vanno
+# impostate tramite un override dell'unità.
+- name: Create Jenkins systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+    mode: "0755"
+
+- name: Configure Jenkins HTTP port and JVM options
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    mode: "0644"
+    content: |
+      # Gestito da Ansible
+      [Service]
+      Environment="JENKINS_PORT={{ jenkins_http_port }}"
+      Environment="JAVA_OPTS=-Djava.awt.headless=true"
   notify: Restart Jenkins
 
-- name: Configure Jenkins to use no built-in executors
-  ansible.builtin.lineinfile:
-    path: /etc/default/jenkins
-    regexp: '^JAVA_ARGS='
-    line: 'JAVA_ARGS="-Djava.awt.headless=true"'
-    create: true
+# Il pacchetto Debian non include jenkins-plugin-cli: si usa il Plugin
+# Installation Manager ufficiale, che risolve le dipendenze dal jenkins.war.
+- name: Download Jenkins Plugin Installation Manager
+  ansible.builtin.get_url:
+    url: "{{ jenkins_plugin_manager_url }}"
+    dest: "{{ jenkins_plugin_manager_jar }}"
+    checksum: "sha256:{{ jenkins_plugin_manager_sha256 }}"
     mode: "0644"
+
+- name: Ensure Jenkins plugin directory exists
+  ansible.builtin.file:
+    path: /var/lib/jenkins/plugins
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0755"
+
+- name: Install Jenkins plugins with dependencies
+  ansible.builtin.command:
+    argv:
+      - java
+      - -jar
+      - "{{ jenkins_plugin_manager_jar }}"
+      - --war
+      - /usr/share/java/jenkins.war
+      - --plugin-download-directory
+      - /var/lib/jenkins/plugins
+      - --plugins
+      - "{{ item }}"
+    creates: "/var/lib/jenkins/plugins/{{ item }}.jpi"
+  become: true
+  become_user: jenkins
+  loop: "{{ jenkins_plugins }}"
   notify: Restart Jenkins
 
 - name: Ensure Jenkins service is enabled and started
@@ -44,6 +82,9 @@
     name: jenkins
     enabled: true
     state: started
+
+- name: Apply pending Jenkins restarts before health check
+  ansible.builtin.meta: flush_handlers
 
 - name: Wait for Jenkins HTTP endpoint
   ansible.builtin.uri:
@@ -66,6 +107,37 @@
   ansible.builtin.command:
     cmd: "ssh-keygen -q -t ed25519 -N '' -f /var/lib/jenkins/.ssh/agent_ed25519"
     creates: /var/lib/jenkins/.ssh/agent_ed25519
+  become: true
+  become_user: jenkins
+
+- name: Scan agent SSH host keys
+  ansible.builtin.command:
+    argv:
+      - ssh-keyscan
+      - -t
+      - ed25519
+      - -p
+      - "{{ hostvars[item].ansible_port | default(22) }}"
+      - "{{ hostvars[item].ansible_host | default(item) }}"
+  loop: "{{ groups['jenkins_controller'] + groups['jenkins_agents'] }}"
+  register: agent_host_keys
+  changed_when: false
+
+- name: Trust agent SSH host keys for the Jenkins user
+  ansible.builtin.known_hosts:
+    path: /var/lib/jenkins/.ssh/known_hosts
+    name: >-
+      {{ (hostvars[item.item].ansible_port | default(22) | int == 22)
+         | ternary(hostvars[item.item].ansible_host | default(item.item),
+                   '[' ~ (hostvars[item.item].ansible_host | default(item.item)) ~ ']:'
+                   ~ hostvars[item.item].ansible_port) }}
+    key: "{{ item.stdout_lines | select('match', '^[^#]') | first }}"
+    state: present
+  become: true
+  become_user: jenkins
+  loop: "{{ agent_host_keys.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
 - name: Read Jenkins agent public key
   ansible.builtin.slurp:

@@ -3,6 +3,7 @@
 # oppure configurare ssh-agent sulla macchina di controllo.
 
 # Bootstrap: Debian Minimal potrebbe non avere Python installato.
+# Installati con il modulo raw dal ruolo bootstrap.
 bootstrap_packages:
   - python3
   - python3-apt
@@ -34,11 +35,17 @@ jenkins_agent_executors: 1
 jenkins_agent_labels: "linux arm64 raspberry"
 jenkins_controller_executors: 0
 jenkins_agent_remote_root: /home/jenkins-agent/work
-jenkins_agent_num_executors_by_host: {}
 
-# Jenkins SSH Build Agents plugin; le dipendenze vengono risolte da jenkins-plugin-cli.
+# Jenkins SSH Build Agents plugin; le dipendenze vengono risolte dal
+# Plugin Installation Manager ufficiale (il pacchetto Debian non ha jenkins-plugin-cli).
 jenkins_plugins:
   - ssh-slaves
+jenkins_plugin_manager_version: "2.16.0"
+jenkins_plugin_manager_url: >-
+  https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/{{ jenkins_plugin_manager_version
+  }}/jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar
+jenkins_plugin_manager_sha256: "b3e9704f8259ec3d0479703039e2ad5a0a15abb97808ad70d5a59ba2fdd73197"
+jenkins_plugin_manager_jar: /usr/local/lib/jenkins-plugin-manager.jar
 
 # NFS è disabilitato finché non si valorizzano server ed export reali.
 storage_nfs:
@@ -53,5 +60,6 @@ storage_nfs:
     - cache
 
 hardware_report_path: /var/lib/jenkins-buildfarm/hardware.json
+# Spazio libero minimo sulla root filesystem: sotto questa soglia il playbook si ferma.
 hardware_min_free_mb: 2048
 hardware_require_arm64: true

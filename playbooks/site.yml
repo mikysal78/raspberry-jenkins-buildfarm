@@ -39,15 +39,3 @@
   roles:
     - role: jenkins_agent
       tags: [jenkins, agents]
-
-- name: Authorize controller key on every agent
-  hosts: jenkins_controller:jenkins_agents
-  become: true
-  gather_facts: false
-  tasks:
-    - name: Add Jenkins controller public key
-      ansible.posix.authorized_key:
-        user: "{{ jenkins_agent_user }}"
-        key: "{{ hostvars[groups['jenkins_controller'][0]].jenkins_agent_public_key }}"
-        state: present
-      tags: [jenkins, agents]

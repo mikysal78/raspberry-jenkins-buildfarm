@@ -2,12 +2,15 @@ import jenkins.model.Jenkins
 import hudson.slaves.DumbSlave
 import hudson.slaves.RetentionStrategy
 import hudson.plugins.sshslaves.SSHLauncher
+import hudson.plugins.sshslaves.verifiers.KnownHostsFileKeyVerificationStrategy
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey
 import com.cloudbees.plugins.credentials.CredentialsScope
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider
 import com.cloudbees.plugins.credentials.domains.Domain
 
 def j = Jenkins.get()
+// Il nodo built-in non esegue build: i job girano sugli agenti SSH.
+j.setNumExecutors({{ jenkins_controller_executors | int }})
 def credentialsId = "raspberry-buildfarm-agent-key"
 def credsProvider = SystemCredentialsProvider.getInstance()
 def existing = credsProvider.getStore().getCredentials(Domain.global()).find { it.id == credentialsId }
@@ -29,7 +32,9 @@ if (existing == null) {
 {% set h = hostvars[host] %}
 def nodeName{{ loop.index }} = "{{ host }}"
 def node{{ loop.index }} = j.getNode(nodeName{{ loop.index }})
-def launcher{{ loop.index }} = new SSHLauncher("{{ h.ansible_host | default(host) }}", 22, credentialsId)
+def launcher{{ loop.index }} = new SSHLauncher("{{ h.ansible_host | default(host) }}", {{ h.ansible_port | default(22) | int }}, credentialsId)
+// Host key verificate contro /var/lib/jenkins/.ssh/known_hosts (popolato da Ansible).
+launcher{{ loop.index }}.setSshHostKeyVerificationStrategy(new KnownHostsFileKeyVerificationStrategy())
 if (node{{ loop.index }} == null) {
     node{{ loop.index }} = new DumbSlave(
         nodeName{{ loop.index }},

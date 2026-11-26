@@ -29,14 +29,26 @@
   changed_when: false
   tags: [hardware]
 
+- name: Ensure enough free space on root filesystem
+  ansible.builtin.assert:
+    that:
+      - root_free_mb | int >= hardware_min_free_mb | int
+    fail_msg: >-
+      Spazio libero su / insufficiente: {{ root_free_mb }} MB disponibili,
+      minimo richiesto {{ hardware_min_free_mb }} MB (hardware_min_free_mb).
+  vars:
+    root_free_mb: "{{ root_df.stdout_lines[-1].split()[3] }}"
+  tags: [hardware]
+
 - name: Calculate conservative executor recommendation
   ansible.builtin.set_fact:
     detected_raspberry_model: "{{ rpi_model.stdout | default('unknown') | trim }}"
     detected_cpu_count: "{{ ansible_processor_vcpus | default(1) | int }}"
     detected_ram_mb: "{{ ansible_memtotal_mb | default(512) | int }}"
+    # Un executor ogni 2 core e ogni 2 GB di RAM, mai meno di 1.
     recommended_executors: >-
-      {{ 1 if (ansible_memtotal_mb | default(512) | int) >= 768
-         and (ansible_processor_vcpus | default(1) | int) >= 2 else 1 }}
+      {{ [1, [(ansible_processor_vcpus | default(1) | int) // 2,
+              (ansible_memtotal_mb | default(512) | int) // 2048] | min] | max }}
   tags: [hardware]
 
 - name: Write hardware report

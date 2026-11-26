@@ -61,18 +61,23 @@ all:
           ansible_host: 192.168.1.102
         raspberry-03:
           ansible_host: 192.168.1.103
+  vars:
+    ansible_user: root
+    ansible_port: 22   # porta SSH dei Raspberry (es. 2400 se non standard)
 ```
 
-L'utente SSH predefinito è `root`. Le variabili comuni si trovano in
+L'utente SSH predefinito è `root`. La stessa `ansible_port` viene usata anche da
+Jenkins per collegarsi agli agenti, quindi deve essere la porta reale di `sshd` e
+l'utente `jenkins-agent` deve poter accedere via SSH su quella porta. Le variabili comuni si trovano in
 `inventory/group_vars/all.yml`. Non inserire password, chiavi private o token in Git.
 
 ## 3. Verifica la connessione
 
 ```bash
 ansible all -m ping
-
-Se la chiave non è quella predefinita: `ansible all -m ping --private-key ~/.ssh/nome_chiave`
 ```
+
+Se la chiave non è quella predefinita: `ansible all -m ping --private-key ~/.ssh/nome_chiave`.
 
 Al primo collegamento può essere necessario accettare le host key SSH. Per una LAN
 fidata è preferibile verificare le fingerprint e popolare `known_hosts` prima
@@ -91,8 +96,12 @@ Il playbook:
 - esegue bootstrap con `raw` (installa Python, sudo e pacchetti base);
 - raccoglie i facts hardware e controlla architettura/OS;
 - installa Java 21 su tutti i nodi;
-- installa Jenkins LTS sul controller;
+- installa Jenkins LTS sul controller (porta e opzioni JVM tramite override systemd);
+- installa i plugin con il Plugin Installation Manager ufficiale (il pacchetto
+  Debian non include `jenkins-plugin-cli`);
 - prepara l'utente `jenkins-agent` e le chiavi SSH per gli agenti;
+- registra le host key SSH dei nodi in `/var/lib/jenkins/.ssh/known_hosts`, così
+  Jenkins verifica gli agenti invece di accettare qualsiasi chiave;
 - configura l'agente locale del controller e gli agenti remoti tramite il plugin
   Jenkins SSH Build Agents;
 - applica la configurazione NFS se abilitata.
@@ -107,10 +116,12 @@ ansible-playbook playbooks/site.yml --tags hardware
 
 ## 5. Accesso a Jenkins
 
-Apri `http://IP_RASPBERRY_01:8080`. La password iniziale si trova sul controller:
+Apri `http://IP_RASPBERRY_01:8080` (porta impostabile con `jenkins_http_port`).
+La password iniziale si trova sul controller:
 
 ```bash
-ssh root@192.168.1.101 'cat /var/lib/jenkins/secrets/initialAdminPassword'
+ansible raspberry-01 -m command -a 'cat /var/lib/jenkins/secrets/initialAdminPassword'
+# oppure: ssh -p PORTA_SSH root@IP_RASPBERRY_01 'cat /var/lib/jenkins/secrets/initialAdminPassword'
 ```
 
 Il progetto non crea un account amministratore con password predefinita: completa la
@@ -142,9 +153,14 @@ della cache `ccache` fra build concorrenti va progettata e verificata separatame
 
 I facts Ansible rilevano modello, architettura, CPU, memoria e filesystem. Il ruolo
 calcola una stima prudenziale e salva un report in
-`/var/lib/jenkins-buildfarm/hardware.json`. `jenkins_agent_executors` può essere
-impostato globalmente oppure per host nell'inventory. Il valore predefinito è
-intenzionalmente conservativo (1 executor per agente).
+`/var/lib/jenkins-buildfarm/hardware.json` (un executor ogni 2 core e ogni 2 GB di
+RAM, minimo 1). Il playbook si ferma se lo spazio libero su `/` è inferiore a
+`hardware_min_free_mb`. La raccomandazione è solo informativa:
+`jenkins_agent_executors` può essere impostato globalmente oppure per host
+nell'inventory. Il valore predefinito è intenzionalmente conservativo (1 executor
+per agente). Il nodo built-in del controller ha `jenkins_controller_executors`
+executor (predefinito 0): le build girano sugli agenti, compreso quello locale di
+`raspberry-01`.
 
 ## Integrazione con il repository OpenWrt
 
@@ -163,7 +179,12 @@ ansible raspberry-01 -m command -a 'systemctl status jenkins'
 ansible all -m command -a 'df -h'
 ```
 
-- `UNREACHABLE`: verifica IP, SSH attivo, utente root, chiave e firewall.
+- `UNREACHABLE`: verifica IP, porta SSH (`ansible_port`), SSH attivo, utente root,
+  chiave e firewall.
+- Agente offline in Jenkins: controlla che `jenkins-agent` possa accedere via SSH
+  sulla porta configurata (eventuali `AllowUsers`/`AllowGroups` in `sshd_config`) e
+  che la host key non sia cambiata; in quel caso riesegui il playbook con
+  `--tags controller` per aggiornare `known_hosts`.
 - `Permission denied`: controlla la chiave pubblica in `authorized_keys` e i
   permessi di `/root/.ssh`.
 - `armhf`/`armv7l`: il playbook si ferma prima dell'installazione Jenkins; usa Debian

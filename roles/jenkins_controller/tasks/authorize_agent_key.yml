@@ -1,7 +1,0 @@
----
-- name: Add controller public key to target agent account
-  ansible.posix.authorized_key:
-    user: "{{ jenkins_agent_user }}"
-    key: "{{ hostvars[groups['jenkins_controller'][0]].jenkins_agent_public_key }}"
-    state: present
-  delegate_to: "{{ target_node }}"
